@@ -20,7 +20,6 @@ package glog
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/user"
@@ -28,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/vma/getopt"
 )
 
 // MaxSize is the maximum size of a log file in bytes.
@@ -38,7 +39,7 @@ var logDirs []string
 
 // If non-empty, overrides the choice of directory in which to write logs.
 // See createLogDirs for the full list of possible destinations.
-var logDir = flag.String("log_dir", "", "If non-empty, write log files in this directory")
+var logDir = getopt.StringLong("log-dir", 0, "", "If non-empty, write log files in this directory")
 
 func createLogDirs() {
 	if *logDir != "" {
@@ -81,19 +82,18 @@ func shortHostname(hostname string) string {
 // logName returns a new log file name containing tag, with start time t, and
 // the name for the symlink for tag.
 func logName(tag string, t time.Time) (name, link string) {
-	name = fmt.Sprintf("%s.%s.%s.log.%s.%04d%02d%02d-%02d%02d%02d.%d",
+	name = fmt.Sprintf("%s.%s.%d.%04d%02d%02dT%02d%02d%02d_%s.log",
 		program,
 		host,
-		userName,
-		tag,
+		pid,
 		t.Year(),
 		t.Month(),
 		t.Day(),
 		t.Hour(),
 		t.Minute(),
 		t.Second(),
-		pid)
-	return name, program + "." + tag
+		tag)
+	return name, program + "_" + tag + ".log"
 }
 
 var onceLogDirs sync.Once

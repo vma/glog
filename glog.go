@@ -74,7 +74,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	stdLog "log"
@@ -86,6 +85,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/vma/getopt"
 )
 
 // severity identifies the sort of log: info, warning etc. It also implements
@@ -124,18 +125,13 @@ func (s *severity) set(val severity) {
 	atomic.StoreInt32((*int32)(s), int32(val))
 }
 
-// String is part of the flag.Value interface.
+// String is part of the getopt.Value interface.
 func (s *severity) String() string {
 	return strconv.FormatInt(int64(*s), 10)
 }
 
-// Get is part of the flag.Value interface.
-func (s *severity) Get() interface{} {
-	return *s
-}
-
-// Set is part of the flag.Value interface.
-func (s *severity) Set(value string) error {
+// Set is part of the getopt.Value interface.
+func (s *severity) Set(value string, opt getopt.Option) error {
 	var threshold severity
 	// Is it a known name?
 	if v, ok := severityByName(value); ok {
@@ -213,18 +209,13 @@ func (l *Level) set(val Level) {
 	atomic.StoreInt32((*int32)(l), int32(val))
 }
 
-// String is part of the flag.Value interface.
+// String is part of the getopt.Value interface.
 func (l *Level) String() string {
 	return strconv.FormatInt(int64(*l), 10)
 }
 
-// Get is part of the flag.Value interface.
-func (l *Level) Get() interface{} {
-	return *l
-}
-
-// Set is part of the flag.Value interface.
-func (l *Level) Set(value string) error {
+// Set is part of the getopt.Value interface.
+func (l *Level) Set(value string, opt getopt.Option) error {
 	v, err := strconv.Atoi(value)
 	if err != nil {
 		return err
@@ -272,16 +263,10 @@ func (m *moduleSpec) String() string {
 	return b.String()
 }
 
-// Get is part of the (Go 1.2)  flag.Getter interface. It always returns nil for this flag type since the
-// struct is not exported.
-func (m *moduleSpec) Get() interface{} {
-	return nil
-}
-
 var errVmoduleSyntax = errors.New("syntax error: expect comma-separated list of filename=N")
 
 // Syntax: -vmodule=recordio=2,file=1,gfs*=3
-func (m *moduleSpec) Set(value string) error {
+func (m *moduleSpec) Set(value string, opt getopt.Option) error {
 	var filter []modulePat
 	for _, pat := range strings.Split(value, ",") {
 		if len(pat) == 0 {
@@ -344,23 +329,20 @@ func (t *traceLocation) match(file string, line int) bool {
 }
 
 func (t *traceLocation) String() string {
-	// Lock because the type is not atomic. TODO: clean this up.
+	// Lock because the type is not atomic
 	logging.mu.Lock()
 	defer logging.mu.Unlock()
+	if !t.isSet() {
+		return ""
+	}
 	return fmt.Sprintf("%s:%d", t.file, t.line)
-}
-
-// Get is part of the (Go 1.2) flag.Getter interface. It always returns nil for this flag type since the
-// struct is not exported
-func (t *traceLocation) Get() interface{} {
-	return nil
 }
 
 var errTraceSyntax = errors.New("syntax error: expect file.go:234")
 
 // Syntax: -log_backtrace_at=gopherflakes.go:234
 // Note that unlike vmodule the file extension is included here.
-func (t *traceLocation) Set(value string) error {
+func (t *traceLocation) Set(value string, opt getopt.Option) error {
 	if value == "" {
 		// Unset.
 		t.line = 0
@@ -396,17 +378,15 @@ type flushSyncWriter interface {
 }
 
 func init() {
-	flag.BoolVar(&logging.toStderr, "logtostderr", false, "log to standard error instead of files")
-	flag.BoolVar(&logging.alsoToStderr, "alsologtostderr", false, "log to standard error as well as files")
-	flag.Var(&logging.verbosity, "v", "log level for V logs")
-	flag.Var(&logging.stderrThreshold, "stderrthreshold", "logs at or above this threshold go to stderr")
-	flag.Var(&logging.vmodule, "vmodule", "comma-separated list of pattern=N settings for file-filtered logging")
-	flag.Var(&logging.traceLocation, "log_backtrace_at", "when logging hits line file:N, emit a stack trace")
-
-	// Default stderrThreshold is ERROR.
 	logging.stderrThreshold = errorLog
-
 	logging.setVState(0, nil, false)
+
+	getopt.FlagLong(&logging.toStderr, "stderr", 0, "log to standard error instead of files")
+	getopt.FlagLong(&logging.alsoToStderr, "also-stderr", 0, "log to standard error as well as files")
+	getopt.FlagLong(&logging.verbosity, "verbosity", 'v', "log level for V logs")
+	getopt.FlagLong(&logging.stderrThreshold, "stderr-level", 0, "logs at or above this level go to stderr")
+	getopt.FlagLong(&logging.vmodule, "vmodule", 0, "comma-separated list of pattern=N settings for file-filtered logging")
+	getopt.FlagLong(&logging.traceLocation, "backtrace", 0, "when logging hits line file:N, emit a stack trace")
 	go logging.flushDaemon()
 }
 
@@ -559,30 +539,35 @@ func (l *loggingT) formatHeader(s severity, file string, line int) *buffer {
 
 	// Avoid Fprintf, for speed. The format is so simple that we can do it quickly by hand.
 	// It's worth about 3X. Fprintf is hard.
-	_, month, day := now.Date()
+	year, month, day := now.Date()
 	hour, minute, second := now.Clock()
-	// Lmmdd hh:mm:ss.uuuuuu threadid file:line]
-	buf.tmp[0] = severityChar[s]
-	buf.twoDigits(1, int(month))
-	buf.twoDigits(3, day)
-	buf.tmp[5] = ' '
-	buf.twoDigits(6, hour)
-	buf.tmp[8] = ':'
-	buf.twoDigits(9, minute)
-	buf.tmp[11] = ':'
-	buf.twoDigits(12, second)
-	buf.tmp[14] = '.'
-	buf.nDigits(6, 15, now.Nanosecond()/1000, '0')
-	buf.tmp[21] = ' '
-	buf.nDigits(7, 22, pid, ' ') // TODO: should be TID
-	buf.tmp[29] = ' '
-	buf.Write(buf.tmp[:30])
+	// [L] yyyy-mm-dd hh:mm:ss.uuuuuu file:line -
+	buf.tmp[0] = '['
+	buf.tmp[1] = severityChar[s]
+	buf.tmp[2] = ']'
+	buf.tmp[3] = ' '
+	buf.nDigits(4, 4, year, '0')
+	buf.tmp[8] = '-'
+	buf.twoDigits(9, int(month))
+	buf.tmp[11] = '-'
+	buf.twoDigits(12, day)
+	buf.tmp[14] = ' '
+	buf.twoDigits(16, hour)
+	buf.tmp[18] = ':'
+	buf.twoDigits(19, minute)
+	buf.tmp[21] = ':'
+	buf.twoDigits(22, second)
+	buf.tmp[24] = '.'
+	buf.nDigits(6, 25, now.Nanosecond()/1000, '0')
+	buf.tmp[31] = ' '
+	buf.Write(buf.tmp[:32])
 	buf.WriteString(file)
 	buf.tmp[0] = ':'
 	n := buf.someDigits(1, line)
-	buf.tmp[n+1] = ']'
-	buf.tmp[n+2] = ' '
-	buf.Write(buf.tmp[:n+3])
+	buf.tmp[n+1] = ' '
+	buf.tmp[n+2] = '-'
+	buf.tmp[n+3] = ' '
+	buf.Write(buf.tmp[:n+4])
 	return buf
 }
 
@@ -669,6 +654,10 @@ func (l *loggingT) printWithFileLine(s severity, file string, line int, alsoToSt
 
 // output writes the data to the log files and releases the buffer.
 func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoToStderr bool) {
+	if !getopt.Parsed() {
+		getopt.Parse()
+	}
+
 	l.mu.Lock()
 	if l.traceLocation.isSet() {
 		if l.traceLocation.match(file, line) {
@@ -676,10 +665,7 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 		}
 	}
 	data := buf.Bytes()
-	if !flag.Parsed() {
-		os.Stderr.Write([]byte("ERROR: logging before flag.Parse: "))
-		os.Stderr.Write(data)
-	} else if l.toStderr {
+	if l.toStderr {
 		os.Stderr.Write(data)
 	} else {
 		if alsoToStderr || l.alsoToStderr || s >= l.stderrThreshold.get() {
@@ -842,10 +828,9 @@ func (sb *syncBuffer) rotateFile(now time.Time) error {
 
 	// Write header.
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "Log file created at: %s\n", now.Format("2006/01/02 15:04:05"))
-	fmt.Fprintf(&buf, "Running on machine: %s\n", host)
-	fmt.Fprintf(&buf, "Binary: Built with %s %s for %s/%s\n", runtime.Compiler, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-	fmt.Fprintf(&buf, "Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg\n")
+	fmt.Fprintf(&buf, "Created at : %s\n", now.Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(&buf, "Running on : %s\n", host)
+	fmt.Fprintf(&buf, "Line format: [IWEF] YYYY-MM-DD hh:mm:ss.uuuuuu file:line - msg\n")
 	n, err := sb.file.Write(buf.Bytes())
 	sb.nbytes += uint64(n)
 	return err
