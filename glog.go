@@ -671,7 +671,8 @@ func (l *loggingT) printWithFileLine(s severity, file string, line int, alsoToSt
 var optOnce sync.Once
 
 func checkOptions() {
-	if !getopt.Parsed() {
+	isTesting := strings.HasSuffix(os.Args[0], ".test")
+	if !getopt.Parsed() && !isTesting {
 		getopt.Parse()
 	}
 	if *logDir == "" {
@@ -679,6 +680,9 @@ func checkOptions() {
 	}
 	if *MaxSizeMB <= 0 {
 		*MaxSizeMB = 200
+	}
+	if isTesting {
+		*PrintLocation = true
 	}
 }
 
