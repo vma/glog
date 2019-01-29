@@ -60,6 +60,15 @@ func (l *Logger) InfofDepth(depth int, format string, args ...interface{}) {
 	logging.printfDepth(infoLog, depth, l.pfmt+format, args...)
 }
 
+func (l *Logger) Warn(args ...interface{}) {
+	args = append(l.parg, args...)
+	logging.println(warningLog, args...)
+}
+
+func (l *Logger) Warnf(format string, args ...interface{}) {
+	logging.printf(warningLog, l.pfmt+format, args...)
+}
+
 func (l *Logger) Warning(args ...interface{}) {
 	args = append(l.parg, args...)
 	logging.println(warningLog, args...)
