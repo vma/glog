@@ -397,6 +397,16 @@ func init() {
 	go logging.flushDaemon()
 }
 
+// GetLevel returns the current logging verbosity level.
+func GetLevel() int {
+	return int(logging.verbosity.get())
+}
+
+// SetLevel sets the current logging verbosity level.
+func SetLevel(lvl int32) {
+	logging.verbosity.set(Level(lvl))
+}
+
 // Flush flushes all pending log I/O.
 func Flush() {
 	logging.lockAndFlushAll()
