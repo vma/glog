@@ -1056,6 +1056,11 @@ func Warningf(format string, args ...interface{}) {
 	logging.printf(warningLog, format, args...)
 }
 
+// WarningfDepth acts as Warningf but uses depth to determine which call frame to log.
+func WarningfDepth(depth int, format string, args ...interface{}) {
+	logging.printfDepth(warningLog, depth, format, args...)
+}
+
 // Error logs to the ERROR, WARNING, and INFO logs.
 // Arguments are handled in the manner of fmt.Print; a newline is appended if missing.
 func Error(args ...interface{}) {
@@ -1078,6 +1083,11 @@ func Errorln(args ...interface{}) {
 // Arguments are handled in the manner of fmt.Printf; a newline is appended if missing.
 func Errorf(format string, args ...interface{}) {
 	logging.printf(errorLog, format, args...)
+}
+
+// ErrorfDepth acts as Errorf but uses depth to determine which call frame to log.
+func ErrorfDepth(depth int, format string, args ...interface{}) {
+	logging.printfDepth(errorLog, depth, format, args...)
 }
 
 // Fatal logs to the FATAL, ERROR, WARNING, and INFO logs,
