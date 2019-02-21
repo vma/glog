@@ -222,6 +222,10 @@ func (l *Level) Set(value string, opt getopt.Option) error {
 	logging.mu.Lock()
 	defer logging.mu.Unlock()
 	logging.setVState(Level(v), logging.vmodule.filter, false)
+	if v >= 1 {
+		// automatically print location in debug mode
+		*PrintLocation = true
+	}
 	return nil
 }
 
@@ -381,7 +385,7 @@ type flushSyncWriter interface {
 var (
 	logDir        = getopt.StringLong("logdir", 0, "", "If set, write log to file in this directory.\nLog files are named <program>.<host>.<pid>.<datetime>.log", "directory")
 	MaxSizeMB     = getopt.Uint64Long("logsize", 0, 200, "Maximum log file size in MB before rotation")
-	PrintLocation = getopt.BoolLong("location", 0, "Print the file:line for each log output (disabled by default as it can be expensive, automatically enabled with --vmodule or --trace)")
+	PrintLocation = getopt.BoolLong("location", 0, "Print the file:line for each log output (disabled by default as it can be expensive, automatically enabled with --debug, --vmodule or --trace)")
 )
 
 func init() {
