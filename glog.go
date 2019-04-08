@@ -224,7 +224,7 @@ func (l *Level) Set(value string, opt getopt.Option) error {
 	logging.setVState(Level(v), logging.vmodule.filter, false)
 	if v >= 1 {
 		// automatically print location in debug mode
-		*PrintLocation = true
+		printLocation = true
 	}
 	return nil
 }
@@ -297,7 +297,7 @@ func (m *moduleSpec) Set(value string, opt getopt.Option) error {
 	logging.mu.Lock()
 	defer logging.mu.Unlock()
 	logging.setVState(logging.verbosity, filter, true)
-	*PrintLocation = true // automatically enabled
+	printLocation = true // automatically enabled
 	return nil
 }
 
@@ -371,7 +371,7 @@ func (t *traceLocation) Set(value string, opt getopt.Option) error {
 	defer logging.mu.Unlock()
 	t.line = v
 	t.file = file
-	*PrintLocation = true // automatically enabled if tracing is required
+	printLocation = true // automatically enabled if tracing is required
 	return nil
 }
 
@@ -383,22 +383,57 @@ type flushSyncWriter interface {
 }
 
 var (
-	logDir        = getopt.StringLong("logdir", 0, "", "If set, write log to file in this directory.\nLog files are named <program>.<host>.<pid>.<datetime>.log", "directory")
-	MaxSizeMB     = getopt.Uint64Long("logsize", 0, 200, "Maximum log file size in MB before rotation")
-	PrintLocation = getopt.BoolLong("location", 0, "Print the file:line for each log output (disabled by default as it can be expensive, automatically enabled with --debug, --vmodule or --trace)")
+	logDir        string
+	maxSizeMB     uint64 = 200
+	printLocation bool
 )
 
 func init() {
 	logging.stderrThreshold = fatalLog
 	logging.setVState(0, nil, false)
+	go logging.flushDaemon()
+}
 
+// WithGetOpt initializes the module with getopt cmdline params.
+func WithGetOpt() {
+	getopt.FlagLong(&logDir, "logdir", 0, "If set, write log to file in this directory.\nLog files are named <program>.<host>.<pid>.<datetime>.log", "directory")
+	getopt.FlagLong(&maxSizeMB, "logsize", 0, "Maximum log file size in MB before rotation")
+	getopt.FlagLong(&printLocation, "location", 0, "Print the file:line for each log output (disabled by default as it can be expensive, automatically enabled with --debug, --vmodule or --trace)")
 	getopt.FlagLong(&logging.alsoToStderr, "stderr", 0, "Log to stderr as well as to file, default if logdir is not set.\nFatal logs are always printed to stderr.")
 	getopt.FlagLong(&logging.verbosity, "debug", 'd', "Set global debug verbosity level.", "level")
-	// REVISIT: make vmodule a list flag
 	getopt.FlagLong(&logging.vmodule, "vmodule", 0, "List of pattern=level settings for file based debug level.\nPattern can be a file name or a glob pattern.", "pattern=N,...")
 	getopt.FlagLong(&logging.traceLocation, "trace", 0, "When logging hits file:line, a stack trace is emitted", "file:line")
 	getopt.SetParameters("") // should be overriden by user
-	go logging.flushDaemon()
+}
+
+// Conf is the logger configuration object
+type Conf struct {
+	// LogDir is the directory where log files are stored (if not empty)
+	LogDir string
+
+	// MaxLogSizeMB is the max size of log files before rotation (default: 200MB)
+	MaxLogSizeMB uint64
+
+	// PrintLocation tells if the file:line location is printed with the log message.
+	PrintLocation bool
+
+	// AlsoToStderr tells to log to stderr as well as to file
+	AlsoToStderr bool
+
+	// Verbosity is the debug verbosity level
+	Verbosity int
+}
+
+// WithConf initializes the module with a Conf object.
+func WithConf(c Conf) {
+	if c.LogDir != "" {
+		logDir = c.LogDir
+	}
+	if c.MaxLogSizeMB != 0 {
+		maxSizeMB = c.MaxLogSizeMB
+	}
+	logging.alsoToStderr = c.AlsoToStderr
+	logging.verbosity = Level(c.Verbosity)
 }
 
 // GetLevel returns the current logging verbosity level.
@@ -530,7 +565,7 @@ where the fields are defined as follows:
 */
 func (l *loggingT) header(s severity, depth int) (*buffer, string, int) {
 	file, line := "", 0
-	if *PrintLocation {
+	if printLocation {
 		var ok bool
 		_, file, line, ok = runtime.Caller(3 + depth)
 		if !ok {
@@ -580,7 +615,7 @@ func (l *loggingT) formatHeader(s severity, file string, line int) *buffer {
 	buf.tmp[23] = '.'
 	buf.nDigits(6, 24, now.Nanosecond()/1000, '0')
 	buf.tmp[30] = ' '
-	if !*PrintLocation {
+	if !printLocation {
 		buf.tmp[31] = '-'
 		buf.tmp[32] = ' '
 		buf.Write(buf.tmp[:33])
@@ -689,14 +724,14 @@ func checkOptions() {
 	if !getopt.Parsed() && !isTesting {
 		getopt.Parse()
 	}
-	if *logDir == "" {
+	if logDir == "" {
 		logging.toStderr = true
 	}
-	if *MaxSizeMB <= 0 {
-		*MaxSizeMB = 200
+	if maxSizeMB <= 0 {
+		maxSizeMB = 200
 	}
 	if isTesting {
-		*PrintLocation = true
+		printLocation = true
 	}
 }
 
@@ -829,7 +864,7 @@ func (sb *syncBuffer) Sync() error {
 }
 
 func (sb *syncBuffer) Write(p []byte) (n int, err error) {
-	if sb.nbytes+uint64(len(p)) >= *MaxSizeMB*1024*1024 {
+	if sb.nbytes+uint64(len(p)) >= maxSizeMB*1024*1024 {
 		if err := sb.rotateFile(time.Now()); err != nil {
 			sb.logger.exit(err)
 		}

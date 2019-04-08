@@ -66,11 +66,11 @@ func logName(t time.Time) string {
 
 // create creates a new log file and returns the file and its filename.
 func create(t time.Time) (*os.File, string, error) {
-	if *logDir == "" {
+	if logDir == "" {
 		return nil, "", errors.New("log: no log dirs")
 	}
 	name := logName(t)
-	fname := filepath.Join(*logDir, name)
+	fname := filepath.Join(logDir, name)
 	f, err := os.Create(fname)
 	if err != nil {
 		return nil, "", fmt.Errorf("log: cannot create file: %v", err)
