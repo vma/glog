@@ -7,7 +7,7 @@ Leveled execution logs for Go.
 
 This package is forked from https://github.com/golang/glog with the following changes:
 
-- The command line options are managed with getopt (github.com/vma/getopt) instead of flags
+- The command line options are not managed automatically (since v1.5.0). Instead, the user can call glog.WithGetOpt() to use with [getopt](http://github.com/vma/getopt) cmd line options (instead of flags) or glog.WithConf() to manually initialize the module.
 
 - All logs are stored in one file instead of one file per level
 
@@ -40,6 +40,21 @@ $ go get github.com/vma/glog
 
 ## Usage
 
+Initialization:
+
+```
+glog.WithGetopt()
+[...]
+getopt.Parse()
+```
+
+```
+glog.WithConf(glog.Conf{
+    LogDir: "/var/log",
+    MaxLogSizeMB: 300,
+    Verbosity: 3
+})
+```
 Basic examples:
 
 ```
