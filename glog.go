@@ -432,6 +432,7 @@ func WithConf(c Conf) {
 	if c.MaxLogSizeMB != 0 {
 		maxSizeMB = c.MaxLogSizeMB
 	}
+	printLocation = c.PrintLocation
 	logging.alsoToStderr = c.AlsoToStderr
 	logging.verbosity = Level(c.Verbosity)
 }
